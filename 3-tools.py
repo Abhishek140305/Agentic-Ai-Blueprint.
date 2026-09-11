@@ -1,38 +1,36 @@
-import json
-import os
+"""
+Tools: Enables agents to execute specific actions in external systems.
+This component provides the capability to make API calls, database updates, file operations, and other practical actions.
 
+
+More info: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
+"""
+
+import json
 import requests
 from openai import OpenAI
-from pydantic import BaseModel, Field
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-"""
-docs: https://platform.openai.com/docs/guides/function-calling
-"""
-
-# --------------------------------------------------------------
-# Define the tool (function) that we want to call
-# --------------------------------------------------------------
 
 
 def get_weather(latitude, longitude):
-    """This is a publically available API that returns the weather for a given location."""
     response = requests.get(
-        f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,wind_speed_10m&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m"
+        f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,wind_speed_10m"
     )
     data = response.json()
-    return data["current"]
+    return data["current"]["temperature_2m"]
 
 
-# --------------------------------------------------------------
-# Step 1: Call model with get_weather tool defined
-# --------------------------------------------------------------
+def call_function(name, args):
+    if name == "get_weather":
+        return get_weather(**args)
+    raise ValueError(f"Unknown function: {name}")
 
-tools = [
-    {
-        "type": "function",
-        "function": {
+
+def intelligence_with_tools(prompt: str) -> str:
+    client = OpenAI()
+
+    tools = [
+        {
+            "type": "function",
             "name": "get_weather",
             "description": "Get current temperature for provided coordinates in celsius.",
             "parameters": {
@@ -45,74 +43,47 @@ tools = [
                 "additionalProperties": False,
             },
             "strict": True,
-        },
-    }
-]
+        }
+    ]
 
-system_prompt = "You are a helpful weather assistant."
+    input_messages = [{"role": "user", "content": prompt}]
 
-messages = [
-    {"role": "system", "content": system_prompt},
-    {"role": "user", "content": "What's the weather like in Paris today?"},
-]
-
-completion = client.chat.completions.create(
-    model="gpt-4o",
-    messages=messages,
-    tools=tools,
-)
-
-# --------------------------------------------------------------
-# Step 2: Model decides to call function(s)
-# --------------------------------------------------------------
-
-completion.model_dump()
-
-# --------------------------------------------------------------
-# Step 3: Execute get_weather function
-# --------------------------------------------------------------
-
-
-def call_function(name, args):
-    if name == "get_weather":
-        return get_weather(**args)
-
-
-for tool_call in completion.choices[0].message.tool_calls:
-    name = tool_call.function.name
-    args = json.loads(tool_call.function.arguments)
-    messages.append(completion.choices[0].message)
-
-    result = call_function(name, args)
-    messages.append(
-        {"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(result)}
+    # Step 1: Call model with tools
+    response = client.responses.create(
+        model="gpt-4o",
+        input=input_messages,
+        tools=tools,
     )
 
-# --------------------------------------------------------------
-# Step 4: Supply result and call model again
-# --------------------------------------------------------------
+    # Step 2: Handle function calls
+    for tool_call in response.output:
+        if tool_call.type == "function_call":
+            # Step 3: Execute function
+            name = tool_call.name
+            args = json.loads(tool_call.arguments)
+            result = call_function(name, args)
 
+            # Step 4: Append function call and result to messages
+            input_messages.append(tool_call)
+            input_messages.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": tool_call.call_id,
+                    "output": str(result),
+                }
+            )
 
-class WeatherResponse(BaseModel):
-    temperature: float = Field(
-        description="The current temperature in celsius for the given location."
+    # Step 5: Get final response with function results
+    final_response = client.responses.create(
+        model="gpt-4o",
+        input=input_messages,
+        tools=tools,
     )
-    response: str = Field(
-        description="A natural language response to the user's question."
-    )
+
+    return final_response.output_text
 
 
-completion_2 = client.beta.chat.completions.parse(
-    model="gpt-4o",
-    messages=messages,
-    tools=tools,
-    response_format=WeatherResponse,
-)
-
-# --------------------------------------------------------------
-# Step 5: Check model response
-# --------------------------------------------------------------
-
-final_response = completion_2.choices[0].message.parsed
-final_response.temperature
-final_response.response
+if __name__ == "__main__":
+    result = intelligence_with_tools(prompt="What's the weather like in Paris today?")
+    print("Tool Calling Output:")
+    print(result)
