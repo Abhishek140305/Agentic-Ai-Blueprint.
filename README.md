@@ -6,7 +6,7 @@ Welcome to the **AI Cookbook** repository! This project is a comprehensive, hand
 
 ## Author & Introduction
 
-Hi there! I am **[Abhishek Rajput]**, an AI engineer and developer passionate about building scalable, intelligent systems. 
+Hi there! I am **[Abhishek Rajput]**, an AI engineer and developer passionate about building scalable, intelligent systems. computer science 
 
 I created this cookbook to bridge the gap between simple LLM prompting and complex real-world AI applications. Whether you are exploring how agents make decisions, implementing structured Agentic RAG, or building hybrid search engines from scratch, this repository provides battle-tested architectures, clean code patterns, and practical recipes to accelerate your engineering journey.
 
